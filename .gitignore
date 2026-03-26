@@ -1,0 +1,79 @@
+# ----------------------
+# Node / Next.js
+# ----------------------
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# env
+.env
+.env.*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# ----------------------
+# Python
+# ----------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+
+venv/
+.venv/
+env/
+
+# ----------------------
+# FastAPI / backend
+# ----------------------
+*.log
+*.db
+
+# vector db / embeddings
+vector_store/
+chroma/
+faiss_index/
+
+# data files
+data/
+uploads/
+
+# ----------------------
+# OS files
+# ----------------------
+.DS_Store
+Thumbs.db
+
+# ----------------------
+# VS Code
+# ----------------------
+.vscode/
+
+# ----------------------
+# Git
+# ----------------------
+*.pem
+*.key
+
+# ----------------------
+# misc
+# ----------------------
+.idea/
+*.swp
+*.swo

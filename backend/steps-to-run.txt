@@ -1,0 +1,25 @@
+✅ Backend dependencies
+
+cd backend
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+py rag/load_docs.py
+py rag/chunk_docs.py
+py rag/embeddings.py
+py rag/vector_store.py
+py -m rag.chat_rag
+uvicorn app.main:app --reload
+------------------------------------------
+✅ Frontend dependencies (NextJS)
+npx create-next-app frontend
+cd frontend
+npm install axios
+npm install lucide-react
+npm install clsx
+npm install tailwindcss
+
+If TypeScript:
+
+npm install @types/node
+npm install @types/reactv
