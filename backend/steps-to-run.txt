@@ -1,7 +1,19 @@
-✅ Backend dependencies
+
+------------------------------------------how to run
+1. cd backend
+2. venv\Scripts\activate
+3. pip install -r requirements.txt
+4. uvicorn app.main:app --reload
+
+cd frontend
+npm install
+npm run dev
+------------------------------------------
+
+Backend dependencies
 
 cd backend
-python -m venv venv
+ #if not created --  python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 py rag/load_docs.py
@@ -10,6 +22,7 @@ py rag/embeddings.py
 py rag/vector_store.py
 py -m rag.chat_rag
 uvicorn app.main:app --reload
+
 ------------------------------------------
 ✅ Frontend dependencies (NextJS)
 npx create-next-app frontend
