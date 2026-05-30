@@ -19,6 +19,14 @@ interface ChatSession {
   messages: Message[];
 }
 
+// NEW ─── Upload state type
+interface UploadedDoc {
+  filename: string;
+  chunks: number;
+  characters: number;
+  status: "ready";
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const API_BASE = "http://127.0.0.1:8000";
@@ -107,21 +115,16 @@ function renderMarkdown(text: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 
-  // Code blocks
   html = html.replace(
     /```(\w*)\n?([\s\S]*?)```/g,
     (_: string, lang: string, code: string) => {
       return `<pre class="bg-zinc-50 border border-zinc-200 rounded-lg p-3 my-3 overflow-x-auto font-mono text-sm text-slate-700"><code>${code.trim()}</code></pre>`;
     },
   );
-
-  // Inline code
   html = html.replace(
     /`([^`]+)`/g,
     '<code class="bg-zinc-100 px-1.5 py-0.5 rounded text-sm font-mono text-slate-700">$1</code>',
   );
-
-  // Tables
   html = html.replace(/((\|.+\|\n?)+)/g, (match: string) => {
     const rows = match.trim().split("\n");
     if (rows.length < 2) return match;
@@ -139,8 +142,6 @@ function renderMarkdown(text: string): string {
       .join("");
     return `<div class="my-3 overflow-x-auto"><table class="w-full border border-zinc-200 rounded-lg overflow-hidden"><thead class="bg-zinc-50">${header}</thead><tbody>${body}</tbody></table></div>`;
   });
-
-  // Headings
   html = html.replace(
     /^### (.+)$/gm,
     '<h3 class="text-sm font-semibold text-slate-900 mt-4 mb-1.5">$1</h3>',
@@ -153,16 +154,12 @@ function renderMarkdown(text: string): string {
     /^# (.+)$/gm,
     '<h1 class="text-lg font-semibold text-slate-900 mt-4 mb-2">$1</h1>',
   );
-
-  // Bold / Italic
   html = html.replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>");
   html = html.replace(
     /\*\*(.+?)\*\*/g,
     '<strong class="font-semibold text-slate-900">$1</strong>',
   );
   html = html.replace(/\*(.+?)\*/g, '<em class="italic">$1</em>');
-
-  // Unordered lists
   html = html.replace(/((?:^[-*+] .+\n?)+)/gm, (match: string) => {
     const items = match
       .trim()
@@ -174,8 +171,6 @@ function renderMarkdown(text: string): string {
       .join("");
     return `<ul class="my-2 space-y-1">${items}</ul>`;
   });
-
-  // Ordered lists
   html = html.replace(/((?:^\d+\. .+\n?)+)/gm, (match: string) => {
     let i = 0;
     const items = match
@@ -188,23 +183,16 @@ function renderMarkdown(text: string): string {
       .join("");
     return `<ol class="my-2 space-y-1">${items}</ol>`;
   });
-
-  // Blockquote
   html = html.replace(
     /^> (.+)$/gm,
     '<blockquote class="border-l-2 border-zinc-300 pl-3 my-2 text-sm text-slate-500 italic">$1</blockquote>',
   );
-
-  // Paragraphs
   html = html.replace(
     /\n\n/g,
     '</p><p class="text-sm text-slate-700 leading-relaxed mb-2">',
   );
   html = `<p class="text-sm text-slate-700 leading-relaxed mb-2">${html}</p>`;
-
-  // Clean up empty paragraphs
   html = html.replace(/<p[^>]*>\s*<\/p>/g, "");
-
   return html;
 }
 
@@ -248,7 +236,6 @@ function TypingIndicator() {
 
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
-
   if (isUser) {
     return (
       <div className="flex justify-end px-4 py-1.5">
@@ -266,7 +253,6 @@ function MessageBubble({ message }: { message: Message }) {
       </div>
     );
   }
-
   return (
     <div className="flex items-start gap-3 px-4 py-1.5">
       <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0 mt-0.5">
@@ -308,6 +294,288 @@ function MessageBubble({ message }: { message: Message }) {
   );
 }
 
+// NEW ─── Upload Panel Component ───────────────────────────────────────────────
+
+function UploadPanel({
+  uploadedDoc,
+  onUploadComplete,
+}: {
+  uploadedDoc: UploadedDoc | null;
+  onUploadComplete: (doc: UploadedDoc) => void;
+}) {
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadState, setUploadState] = useState<
+    "idle" | "uploading" | "error"
+  >("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [progress, setProgress] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (file: File) => {
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (!["pdf", "docx", "txt"].includes(ext ?? "")) {
+      setErrorMsg("Only PDF, DOCX, and TXT files are supported.");
+      setUploadState("error");
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      setErrorMsg("File is too large. Maximum size is 20 MB.");
+      setUploadState("error");
+      return;
+    }
+
+    setUploadState("uploading");
+    setErrorMsg("");
+    setProgress(10);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    // Simulate progress ticks while uploading
+    const ticker = setInterval(() => {
+      setProgress((p) => Math.min(p + 15, 85));
+    }, 300);
+
+    try {
+      const res = await fetch(`${API_BASE}/upload-document`, {
+        method: "POST",
+        body: formData,
+      });
+      clearInterval(ticker);
+      setProgress(100);
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail ?? "Upload failed");
+      }
+
+      const data = await res.json();
+      onUploadComplete({
+        filename: data.filename,
+        chunks: data.chunks,
+        characters: data.characters,
+        status: "ready",
+      });
+      setUploadState("idle");
+      setProgress(0);
+    } catch (err) {
+      clearInterval(ticker);
+      setProgress(0);
+      setErrorMsg(
+        err instanceof Error ? err.message : "Upload failed. Please try again.",
+      );
+      setUploadState("error");
+    }
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  };
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+    e.target.value = "";
+  };
+
+  return (
+    <div className="px-3 pb-3 pt-2 border-t border-slate-100">
+      {/* Drop zone */}
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={onDrop}
+        onClick={() => fileInputRef.current?.click()}
+        className={`
+          relative w-full rounded-xl border-2 border-dashed transition-all duration-150 cursor-pointer
+          flex flex-col items-center justify-center gap-1.5 py-4 px-3
+          ${
+            isDragging
+              ? "border-slate-400 bg-slate-50"
+              : uploadState === "error"
+                ? "border-red-300 bg-red-50"
+                : uploadedDoc
+                  ? "border-emerald-300 bg-emerald-50"
+                  : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white"
+          }
+        `}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.docx,.txt"
+          onChange={onFileChange}
+          className="hidden"
+        />
+
+        {uploadState === "uploading" ? (
+          <>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="text-slate-400 animate-spin"
+            >
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+            </svg>
+            <p className="text-xs text-slate-500 font-medium">
+              Processing document…
+            </p>
+            {/* Progress bar */}
+            <div className="w-full bg-slate-200 rounded-full h-1 mt-1">
+              <div
+                className="bg-slate-600 h-1 rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </>
+        ) : uploadedDoc ? (
+          <>
+            <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                className="text-emerald-600"
+              >
+                <polyline points="20,6 9,17 4,12" />
+              </svg>
+            </div>
+            <p className="text-xs font-semibold text-slate-700 truncate max-w-full px-2 text-center">
+              {uploadedDoc.filename}
+            </p>
+            <p className="text-xs text-slate-400">
+              {uploadedDoc.chunks} chunks ·{" "}
+              {(uploadedDoc.characters / 1000).toFixed(1)}k chars
+            </p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Click to replace document
+            </p>
+          </>
+        ) : uploadState === "error" ? (
+          <>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="text-red-400"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <p className="text-xs text-red-500 text-center px-1">{errorMsg}</p>
+            <p className="text-xs text-slate-400">Click to try again</p>
+          </>
+        ) : (
+          <>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="text-slate-400"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17,8 12,3 7,8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <p className="text-xs font-medium text-slate-600">
+              Upload Document
+            </p>
+            <p className="text-xs text-slate-400">PDF, DOCX, TXT · max 20 MB</p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// NEW ─── Mode Toggle Component ────────────────────────────────────────────────
+
+function ModeToggle({
+  mode,
+  onChange,
+  hasDoc,
+}: {
+  mode: "legal" | "document";
+  onChange: (m: "legal" | "document") => void;
+  hasDoc: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200">
+      <button
+        onClick={() => onChange("legal")}
+        className={`
+          flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150
+          ${
+            mode === "legal"
+              ? "bg-slate-900 text-white shadow-sm"
+              : "text-slate-500 hover:text-slate-700"
+          }
+        `}
+      >
+        <svg
+          width="11"
+          height="11"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+        >
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        </svg>
+        Legal KB
+      </button>
+      <button
+        onClick={() => onChange("document")}
+        disabled={!hasDoc}
+        title={!hasDoc ? "Upload a document first" : ""}
+        className={`
+          flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150
+          ${
+            mode === "document"
+              ? "bg-slate-900 text-white shadow-sm"
+              : hasDoc
+                ? "text-slate-500 hover:text-slate-700"
+                : "text-slate-300 cursor-not-allowed"
+          }
+        `}
+      >
+        <svg
+          width="11"
+          height="11"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+        >
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14,2 14,8 20,8" />
+        </svg>
+        {hasDoc ? "My Doc" : "My Doc ↑"}
+      </button>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function Page() {
@@ -319,14 +587,19 @@ export default function Page() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [darkToggle, setDarkToggle] = useState(false);
 
+  // NEW state
+  const [mode, setMode] = useState<"legal" | "document">("legal");
+  const [uploadedDoc, setUploadedDoc] = useState<UploadedDoc | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null;
   const messages = activeSession?.messages ?? [];
 
   // ── Backend health check ──────────────────────────────────────────────────
-
   useEffect(() => {
     let cancelled = false;
     const check = async () => {
@@ -350,13 +623,9 @@ export default function Page() {
     };
   }, []);
 
-  // ── Auto-scroll ───────────────────────────────────────────────────────────
-
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
-
-  // ── Textarea auto-resize ──────────────────────────────────────────────────
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -364,8 +633,6 @@ export default function Page() {
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [input]);
-
-  // ── Create new session ────────────────────────────────────────────────────
 
   const createNewSession = useCallback((): string => {
     const id = `session-${Date.now()}`;
@@ -385,8 +652,13 @@ export default function Page() {
     setInput("");
   };
 
-  // ── Send message ──────────────────────────────────────────────────────────
+  // NEW: when a doc is uploaded, switch mode automatically
+  const handleUploadComplete = (doc: UploadedDoc) => {
+    setUploadedDoc(doc);
+    setMode("document");
+  };
 
+  // ── Send message ──────────────────────────────────────────────────────────
   const sendMessage = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
@@ -427,7 +699,8 @@ export default function Page() {
         const response = await fetch(`${API_BASE}/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: trimmed }),
+          // NEW: pass mode field alongside message
+          body: JSON.stringify({ message: trimmed, mode }),
         });
 
         if (!response.ok) {
@@ -482,7 +755,7 @@ export default function Page() {
         setTimeout(() => textareaRef.current?.focus(), 100);
       }
     },
-    [activeSessionId, isLoading, createNewSession],
+    [activeSessionId, isLoading, createNewSession, mode], // added mode dependency
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -597,6 +870,9 @@ export default function Page() {
           )}
         </div>
 
+        {/* NEW ── Upload Panel (above settings) */}
+        {/* <UploadPanel uploadedDoc={uploadedDoc} onUploadComplete={handleUploadComplete} /> */}
+
         {/* Settings */}
         <div className="px-3 pb-4 pt-2 border-t border-slate-100">
           <button className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-all duration-150">
@@ -622,7 +898,6 @@ export default function Page() {
         {/* Top Navbar */}
         <header className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 shrink-0">
           <div className="flex items-center gap-3">
-            {/* Sidebar toggle */}
             <button
               onClick={() => setSidebarOpen((v) => !v)}
               className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-all duration-150"
@@ -662,6 +937,9 @@ export default function Page() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* NEW ── Mode toggle in header */}
+            <ModeToggle mode={mode} onChange={setMode} hasDoc={!!uploadedDoc} />
+
             {/* Backend status */}
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200">
               <div
@@ -682,7 +960,6 @@ export default function Page() {
               </span>
             </div>
 
-            {/* Dark mode toggle (UI only) */}
             <button
               onClick={() => setDarkToggle((v) => !v)}
               className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-all duration-150"
@@ -723,10 +1000,37 @@ export default function Page() {
           </div>
         </header>
 
+        {/* NEW ── Active mode banner (only when in document mode) */}
+        {mode === "document" && uploadedDoc && (
+          <div className="shrink-0 px-4 py-2 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="text-amber-600 shrink-0"
+            >
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14,2 14,8 20,8" />
+            </svg>
+            <p className="text-xs text-amber-700 font-medium truncate">
+              Answering from:{" "}
+              <span className="font-semibold">{uploadedDoc.filename}</span>
+            </p>
+            <button
+              onClick={() => setMode("legal")}
+              className="ml-auto shrink-0 text-xs text-amber-600 hover:text-amber-800 underline transition-colors"
+            >
+              Switch to Legal KB
+            </button>
+          </div>
+        )}
+
         {/* Messages / Hero */}
         <div className="flex-1 overflow-y-auto">
           {messages.length === 0 ? (
-            /* ── Hero / Empty State ── */
             <div className="flex flex-col items-center justify-center h-full px-6 pb-24">
               <div className="w-14 h-14 rounded-2xl bg-slate-900 flex items-center justify-center mb-5 shadow-sm">
                 <svg
@@ -741,14 +1045,16 @@ export default function Page() {
                 </svg>
               </div>
               <h1 className="text-2xl font-semibold text-slate-900 mb-2 text-center">
-                Ask Questions About Legal Documents
+                {mode === "document" && uploadedDoc
+                  ? `Chatting with "${uploadedDoc.filename}"`
+                  : "Ask Questions About Legal Documents"}
               </h1>
               <p className="text-sm text-slate-500 text-center max-w-sm leading-relaxed mb-8">
-                Retrieve accurate answers using AI-powered legal search.
-                Grounded in your documents.
+                {mode === "document" && uploadedDoc
+                  ? "Ask anything about your uploaded document. Answers are grounded strictly in its content."
+                  : "Retrieve accurate answers using AI-powered legal search. Grounded in your documents."}
               </p>
 
-              {/* Suggestion cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full max-w-xl">
                 {SUGGESTIONS.map((s) => (
                   <button
@@ -772,7 +1078,6 @@ export default function Page() {
               </div>
             </div>
           ) : (
-            /* ── Messages ── */
             <div className="py-4 space-y-1">
               {messages.map((msg) => (
                 <MessageBubble key={msg.id} message={msg} />
@@ -786,11 +1091,46 @@ export default function Page() {
         {/* ── Input Area ─────────────────────────────────────────────────────── */}
         <div className="shrink-0 px-4 pb-5 pt-3 bg-white border-t border-slate-200">
           <div className="max-w-3xl mx-auto">
+            {uploadedDoc && (
+              <div className="mb-2 flex items-center gap-2 text-xs bg-slate-100 border border-slate-200 rounded-lg px-3 py-2">
+                <span>📄</span>
+                <span className="truncate">{uploadedDoc.filename}</span>
+              </div>
+            )}
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept=".pdf,.docx,.txt"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+
+                const formData = new FormData();
+                formData.append("file", file);
+
+                const response = await fetch(`${API_BASE}/upload-document`, {
+                  method: "POST",
+                  body: formData,
+                });
+
+                const data = await response.json();
+
+                handleUploadComplete({
+                  filename: data.filename,
+                  chunks: data.chunks,
+                  characters: data.characters,
+                  status: "ready",
+                });
+              }}
+            />
             <div className="flex items-end gap-2 bg-white border border-slate-200 rounded-2xl shadow-sm px-4 py-3 focus-within:border-slate-400 focus-within:shadow-md transition-all duration-150">
-              {/* Attach button (UI only) */}
+              {/* Attach button — now opens upload panel in sidebar */}
               <button
+                onClick={() => uploadInputRef.current?.click()}
                 className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all duration-150 shrink-0 mb-0.5"
-                aria-label="Attach file"
+                aria-label="Upload document"
+                title="Upload a document"
               >
                 <svg
                   width="16"
@@ -804,19 +1144,21 @@ export default function Page() {
                 </svg>
               </button>
 
-              {/* Textarea */}
               <textarea
                 ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask a legal question…"
+                placeholder={
+                  mode === "document" && uploadedDoc
+                    ? `Ask about "${uploadedDoc.filename}"…`
+                    : "Ask a legal question…"
+                }
                 rows={1}
                 disabled={isLoading}
                 className="flex-1 resize-none bg-transparent text-sm text-slate-900 placeholder:text-slate-400 outline-none leading-relaxed max-h-40 min-h-[24px] py-0.5 disabled:opacity-50 font-sans"
               />
 
-              {/* Send button */}
               <button
                 onClick={() => sendMessage(input)}
                 disabled={!input.trim() || isLoading}
@@ -858,17 +1200,35 @@ export default function Page() {
               </button>
             </div>
 
-            {/* Footer hint */}
+            {/* Footer hint — shows current mode */}
             <p className="text-xs text-slate-400 text-center mt-2">
-              Press{" "}
-              <kbd className="px-1 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-500 font-mono text-xs">
-                Enter
-              </kbd>{" "}
-              to send ·{" "}
-              <kbd className="px-1 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-500 font-mono text-xs">
-                Shift+Enter
-              </kbd>{" "}
-              for newline
+              {mode === "document" && uploadedDoc ? (
+                <>
+                  Mode:{" "}
+                  <span className="font-medium text-amber-600">
+                    Uploaded Document
+                  </span>{" "}
+                  ·{" "}
+                  <button
+                    onClick={() => setMode("legal")}
+                    className="underline hover:text-slate-600 transition-colors"
+                  >
+                    Switch to Legal KB
+                  </button>
+                </>
+              ) : (
+                <>
+                  Press{" "}
+                  <kbd className="px-1 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-500 font-mono text-xs">
+                    Enter
+                  </kbd>{" "}
+                  to send ·{" "}
+                  <kbd className="px-1 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-500 font-mono text-xs">
+                    Shift+Enter
+                  </kbd>{" "}
+                  for newline
+                </>
+              )}
             </p>
           </div>
         </div>
