@@ -2,6 +2,15 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 
+// ─── Web Speech API Types ─────────────────────────────────────────────────────
+
+declare global {
+  interface Window {
+    SpeechRecognition: typeof SpeechRecognition;
+    webkitSpeechRecognition: typeof SpeechRecognition;
+  }
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Message {
@@ -31,7 +40,85 @@ interface UploadedDoc {
 
 const API_BASE = "http://127.0.0.1:8000";
 
-const SUGGESTIONS = [
+// const SUGGESTIONS = [
+//   {
+//     icon: (
+//       <svg
+//         width="16"
+//         height="16"
+//         viewBox="0 0 24 24"
+//         fill="none"
+//         stroke="currentColor"
+//         strokeWidth="2"
+//       >
+//         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+//         <polyline points="14,2 14,8 20,8" />
+//         <line x1="16" y1="13" x2="8" y2="13" />
+//         <line x1="16" y1="17" x2="8" y2="17" />
+//         <polyline points="10,9 9,9 8,9" />
+//       </svg>
+//     ),
+//     title: "Summarize this agreement",
+//     prompt: "Summarize this agreement in clear, plain English.",
+//   },
+//   {
+//     icon: (
+//       <svg
+//         width="16"
+//         height="16"
+//         viewBox="0 0 24 24"
+//         fill="none"
+//         stroke="currentColor"
+//         strokeWidth="2"
+//       >
+//         <circle cx="12" cy="12" r="10" />
+//         <line x1="12" y1="8" x2="12" y2="12" />
+//         <line x1="12" y1="16" x2="12.01" y2="16" />
+//       </svg>
+//     ),
+//     title: "What are the termination clauses?",
+//     prompt: "What are the termination clauses in this document?",
+//   },
+//   {
+//     icon: (
+//       <svg
+//         width="16"
+//         height="16"
+//         viewBox="0 0 24 24"
+//         fill="none"
+//         stroke="currentColor"
+//         strokeWidth="2"
+//       >
+//         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+//       </svg>
+//     ),
+//     title: "Explain liabilities",
+//     prompt: "Explain the liability clauses and their implications.",
+//   },
+//   {
+//     icon: (
+//       <svg
+//         width="16"
+//         height="16"
+//         viewBox="0 0 24 24"
+//         fill="none"
+//         stroke="currentColor"
+//         strokeWidth="2"
+//       >
+//         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+//         <circle cx="9" cy="7" r="4" />
+//         <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+//         <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+//       </svg>
+//     ),
+//     title: "Key obligations of parties",
+//     prompt: "What are the key obligations of each party in this agreement?",
+//   },
+// ];
+
+// ─── Suggestion Pool ──────────────────────────────────────────────────────────
+
+const ALL_SUGGESTIONS = [
   {
     icon: (
       <svg
@@ -42,15 +129,13 @@ const SUGGESTIONS = [
         stroke="currentColor"
         strokeWidth="2"
       >
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14,2 14,8 20,8" />
-        <line x1="16" y1="13" x2="8" y2="13" />
-        <line x1="16" y1="17" x2="8" y2="17" />
-        <polyline points="10,9 9,9 8,9" />
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       </svg>
     ),
-    title: "Summarize this agreement",
-    prompt: "Summarize this agreement in clear, plain English.",
+    title: "Punishment under IPC Section 420?",
+    description:
+      "Understand penalties for cheating and fraud under Indian law.",
+    prompt: "What is the punishment under IPC Section 420?",
   },
   {
     icon: (
@@ -67,8 +152,10 @@ const SUGGESTIONS = [
         <line x1="12" y1="16" x2="12.01" y2="16" />
       </svg>
     ),
-    title: "What are the termination clauses?",
-    prompt: "What are the termination clauses in this document?",
+    title: "My fundamental rights under the Constitution?",
+    description:
+      "Explore the fundamental rights guaranteed to every Indian citizen.",
+    prompt: "What are my fundamental rights under the Constitution of India?",
   },
   {
     icon: (
@@ -80,11 +167,16 @@ const SUGGESTIONS = [
         stroke="currentColor"
         strokeWidth="2"
       >
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+        <line x1="8" y1="21" x2="16" y2="21" />
+        <line x1="12" y1="17" x2="12" y2="21" />
       </svg>
     ),
-    title: "Explain liabilities",
-    prompt: "Explain the liability clauses and their implications.",
+    title: "Can I file a complaint against online fraud?",
+    description:
+      "Know your legal options for reporting cyber fraud and online scams.",
+    prompt:
+      "Can I file a complaint against online fraud? What are the legal remedies under cyber law?",
   },
   {
     icon: (
@@ -102,10 +194,173 @@ const SUGGESTIONS = [
         <path d="M16 3.13a4 4 0 0 1 0 7.75" />
       </svg>
     ),
-    title: "Key obligations of parties",
-    prompt: "What are the key obligations of each party in this agreement?",
+    title: "Rights of employees under labour laws?",
+    description:
+      "Understand what protections the Labour Act provides to workers.",
+    prompt: "What rights do employees have under Indian labour laws?",
+  },
+  {
+    icon: (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      >
+        <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+        <line x1="3" y1="6" x2="21" y2="6" />
+        <path d="M16 10a4 4 0 0 1-8 0" />
+      </svg>
+    ),
+    title: "Compensation for a defective product?",
+    description:
+      "Learn how consumer law protects you from faulty goods and services.",
+    prompt:
+      "Can a consumer get compensation for a defective product under consumer law in India?",
+  },
+  {
+    icon: (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="8" x2="12" y2="16" />
+        <line x1="8" y1="12" x2="16" y2="12" />
+      </svg>
+    ),
+    title: "Cognizable vs non-cognizable offences?",
+    description:
+      "Understand the key difference under CrPC and how it affects your case.",
+    prompt:
+      "What is the difference between cognizable and non-cognizable offences under CrPC?",
+  },
+  {
+    icon: (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      >
+        <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
+        <line x1="1" y1="10" x2="23" y2="10" />
+      </svg>
+    ),
+    title: "Legal consequences of cheque bounce?",
+    description:
+      "Find out penalties and legal action available under the Negotiable Instruments Act.",
+    prompt: "What are the legal consequences of a cheque bounce in India?",
+  },
+  {
+    icon: (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      >
+        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+      </svg>
+    ),
+    title: "Can a wife claim maintenance after divorce?",
+    description:
+      "Know the rights of a spouse to seek maintenance under the Hindu Marriage Act.",
+    prompt:
+      "Can a wife claim maintenance after divorce under the Hindu Marriage Act?",
+  },
+  {
+    icon: (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      >
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+      </svg>
+    ),
+    title: "Remedies available for cyber crime victims?",
+    description:
+      "Explore legal remedies and how to report cyber crimes in India.",
+    prompt:
+      "What remedies are available for cyber crime victims under Indian cyber law?",
+  },
+  {
+    icon: (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      >
+        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+      </svg>
+    ),
+    title: "How to protect intellectual property rights?",
+    description:
+      "Understand how trademarks, copyrights, and patents work in India.",
+    prompt: "How can I protect my intellectual property rights in India?",
+  },
+  {
+    icon: (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      >
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+        <polyline points="9,22 9,12 15,12 15,22" />
+      </svg>
+    ),
+    title: "Rights of a tenant in India?",
+    description:
+      "Know your legal protections as a tenant under Indian property and rent laws.",
+    prompt: "What are the legal rights of a tenant in India?",
+  },
+  {
+    icon: (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      >
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14,2 14,8 20,8" />
+      </svg>
+    ),
+    title: "How to register a company in India?",
+    description:
+      "Learn the process and legal requirements for incorporating a company.",
+    prompt:
+      "What is the process to register a company in India under Company Law?",
   },
 ];
+
+function getRandomSuggestions(count: number) {
+  const shuffled = [...ALL_SUGGESTIONS].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
 
 // ─── Markdown Renderer ────────────────────────────────────────────────────────
 
@@ -596,6 +851,94 @@ export default function Page() {
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
+  const [suggestions, setSuggestions] = useState(() =>
+    getRandomSuggestions(4).map((_, i) => ALL_SUGGESTIONS[i]),
+  );
+
+  useEffect(() => {
+    setSuggestions(getRandomSuggestions(4));
+  }, []);
+
+  // ── Speech-to-text state ──────────────────────────────────────────────────────
+  const [isListening, setIsListening] = useState(false);
+  const [micError, setMicError] = useState<string>("");
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  const [isSpeechSupported, setIsSpeechSupported] = useState(false);
+
+  useEffect(() => {
+    setIsSpeechSupported(
+      "SpeechRecognition" in window || "webkitSpeechRecognition" in window,
+    );
+  }, []);
+
+  const startListening = useCallback(() => {
+    if (!isSpeechSupported) {
+      setMicError("Speech recognition is not supported in your browser.");
+      return;
+    }
+    if (isListening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    setMicError("");
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SR();
+    recognitionRef.current = recognition;
+
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    // Support English and Hindi; mixed (Hinglish) works naturally with en-IN
+    recognition.lang = "en-IN";
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => setIsListening(true);
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let transcript = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      setInput(transcript);
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      setIsListening(false);
+      switch (event.error) {
+        case "not-allowed":
+        case "permission-denied":
+          setMicError(
+            "Microphone access denied. Please allow microphone permission.",
+          );
+          break;
+        case "no-speech":
+          setMicError("No speech detected. Please try again.");
+          break;
+        case "network":
+          setMicError(
+            "Network error during recognition. Check your connection.",
+          );
+          break;
+        case "aborted":
+          break;
+        default:
+          setMicError("Speech recognition failed. Please try again.");
+      }
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      setMicError("Could not start microphone. Please try again.");
+      setIsListening(false);
+    }
+  }, [isListening, isSpeechSupported]);
+
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null;
   const messages = activeSession?.messages ?? [];
 
@@ -1055,7 +1398,7 @@ export default function Page() {
                   : "Retrieve accurate answers using AI-powered legal search. Grounded in your documents."}
               </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full max-w-xl">
+              {/* <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full max-w-xl">
                 {SUGGESTIONS.map((s) => (
                   <button
                     key={s.title}
@@ -1071,6 +1414,27 @@ export default function Page() {
                       </p>
                       <p className="text-xs text-slate-400 mt-0.5 leading-relaxed line-clamp-1">
                         {s.prompt}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div> */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full max-w-xl">
+                {suggestions.map((s) => (
+                  <button
+                    key={s.title}
+                    onClick={() => sendMessage(s.prompt)}
+                    className="flex items-start gap-3 p-4 bg-white border border-slate-200 rounded-xl text-left hover:border-slate-300 hover:shadow-sm transition-all duration-150 group"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 shrink-0 group-hover:bg-slate-100 transition-colors">
+                      {s.icon}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-slate-800 group-hover:text-slate-900 transition-colors">
+                        {s.title}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-0.5 leading-relaxed line-clamp-1">
+                        {s.description}
                       </p>
                     </div>
                   </button>
@@ -1126,6 +1490,25 @@ export default function Page() {
             />
             <div className="flex items-end gap-2 bg-white border border-slate-200 rounded-2xl shadow-sm px-4 py-3 focus-within:border-slate-400 focus-within:shadow-md transition-all duration-150">
               {/* Attach button — now opens upload panel in sidebar */}
+              {/* <button
+                onClick={() => uploadInputRef.current?.click()}
+                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all duration-150 shrink-0 mb-0.5"
+                aria-label="Upload document"
+                title="Upload a document"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M21.44 11.05L12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+              </button> */}
+
+              {/* Attach button */}
               <button
                 onClick={() => uploadInputRef.current?.click()}
                 className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all duration-150 shrink-0 mb-0.5"
@@ -1143,6 +1526,47 @@ export default function Page() {
                   <path d="M21.44 11.05L12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                 </svg>
               </button>
+
+              {/* Mic button */}
+              {isSpeechSupported && (
+                <button
+                  onClick={startListening}
+                  disabled={isLoading}
+                  title={
+                    isListening
+                      ? "Stop listening"
+                      : "Start voice input (English / Hindi)"
+                  }
+                  aria-label={isListening ? "Stop listening" : "Voice input"}
+                  className={`
+      relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-150 shrink-0 mb-0.5
+      ${
+        isListening
+          ? "bg-red-500 text-white hover:bg-red-600"
+          : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+      }
+      ${isLoading ? "opacity-40 cursor-not-allowed" : ""}
+    `}
+                >
+                  {/* Pulse ring while listening */}
+                  {isListening && (
+                    <span className="absolute inset-0 rounded-lg animate-ping bg-red-400 opacity-50" />
+                  )}
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                    <line x1="8" y1="23" x2="16" y2="23" />
+                  </svg>
+                </button>
+              )}
 
               <textarea
                 ref={textareaRef}
@@ -1201,8 +1625,60 @@ export default function Page() {
             </div>
 
             {/* Footer hint — shows current mode */}
-            <p className="text-xs text-slate-400 text-center mt-2">
+            {/* <p className="text-xs text-slate-400 text-center mt-2">
               {mode === "document" && uploadedDoc ? (
+                <>
+                  Mode:{" "}
+                  <span className="font-medium text-amber-600">
+                    Uploaded Document
+                  </span>{" "}
+                  ·{" "}
+                  <button
+                    onClick={() => setMode("legal")}
+                    className="underline hover:text-slate-600 transition-colors"
+                  >
+                    Switch to Legal KB
+                  </button>
+                </>
+              ) : (
+                <>
+                  Press{" "}
+                  <kbd className="px-1 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-500 font-mono text-xs">
+                    Enter
+                  </kbd>{" "}
+                  to send ·{" "}
+                  <kbd className="px-1 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-500 font-mono text-xs">
+                    Shift+Enter
+                  </kbd>{" "}
+                  for newline
+                </>
+              )}
+            </p> */}
+            {/* Mic error toast */}
+            {micError && (
+              <p className="text-xs text-red-500 text-center mt-1 flex items-center justify-center gap-1">
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                {micError}
+              </p>
+            )}
+
+            <p className="text-xs text-slate-400 text-center mt-1.5">
+              {isListening ? (
+                <span className="text-red-500 font-medium animate-pulse">
+                  🎤 Listening… speak now
+                </span>
+              ) : mode === "document" && uploadedDoc ? (
                 <>
                   Mode:{" "}
                   <span className="font-medium text-amber-600">
