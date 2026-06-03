@@ -13,13 +13,13 @@ npm run dev
 Backend dependencies
 
 cd backend
- #if not created --  python -m venv venv
+python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 py rag/load_docs.py
-py rag/chunk_docs.py
+py rag/chunk_docs.py or py -m rag.chunk_docs
 py rag/embeddings.py
-py rag/vector_store.py
+py rag/vector_store.py or py -m rag.vector_store
 py -m rag.chat_rag
 uvicorn app.main:app --reload
 

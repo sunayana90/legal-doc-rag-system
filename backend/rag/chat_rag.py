@@ -39,7 +39,18 @@ def ask_llm(question: str, mode: Optional[str] = "legal") -> str:
     # Step 3: Intent is "legal" - process through RAG pipeline
     mode = detect_mode(question)
 
-    docs = search_docs(question, k=3)
+    docs = search_docs(question, k=7)
+    
+    print("\nRETRIEVED DOCS:\n")
+
+    for i, d in enumerate(docs, 1):
+        print("=" * 60)
+        print(f"Document {i}")
+        print("Metadata:", d.metadata)
+        print("Content:")
+        print(d.page_content[:500])
+        print()
+
 
     context = "\n\n".join(
         [
@@ -58,7 +69,26 @@ def ask_llm(question: str, mode: Optional[str] = "legal") -> str:
     chat = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[
-            {"role": "user", "content": prompt}
+            # {"role": "user", "content": prompt}
+            {
+    "role": "system",
+    "content": """
+You are a multilingual legal assistant.
+
+Rules:
+1. Answer in the same language used by the user.
+2. English question → English answer.
+3. Hindi question → Hindi answer.
+4. Marathi question → Marathi answer.
+5. Tamil question → Tamil answer.
+6. Use only the provided legal context.
+7. If information is not found, say so clearly.
+"""
+},
+             {
+            "role": "user",
+            "content": prompt
+        }
         ],
     )
 
